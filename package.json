@@ -1,0 +1,29 @@
+{
+  "name": "fxckbt",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.2",
+    "extend": "^3.0.1",
+    "fs-extra": "^5.0.0",
+    "promise": "^8.0.1",
+    "request": "^2.83.0",
+    "sqlite3": "^3.1.13",
+    "url": "^0.11.0",
+    "webpack": "^3.10.0"
+  },
+  "devDependencies": {
+    "socks5-http-client": "^1.0.2"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://sammeishi@bitbucket.org/sammeishi/fxckbt.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "homepage": "https://bitbucket.org/sammeishi/fxckbt#readme"
+}
