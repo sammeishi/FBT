@@ -37,6 +37,54 @@
     }
     body{
         font-size: 13px;
+        overflow: hidden;
+    }
+    .monitor{
+        position: absolute;
+        left: 0px;
+        top: 0;
+        bottom: 0;
+        width: 250px;
+        overflow: auto;
+        padding: 10px;
+        box-sizing: border-box;
+        background: #111111;
+        color: #fff;
+    }
+    .monitor ul.global{
+        margin-bottom: 20px;
+    }
+    .monitor ul li{
+        overflow: hidden;
+        text-overflow:ellipsis;
+        white-space: nowrap;
+    }
+    .monitor ul li.name{
+        background: #41133a;
+        margin-bottom: 5px;
+    }
+    .monitor ul{
+        margin-bottom: 5px;
+    }
+    .monitor ul li.sleep{
+        background: #4d4200;
+    }
+    .monitor ul li.active{
+        background: #006e21;
+    }
+    .monitor ul li.close{
+        background: #ff0022;
+    }
+    .monitor ul li{
+        text-indent: 10px;
+    }
+    .BTList{
+        position: absolute;
+        left: 250px;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        overflow-y:auto;
     }
     table{
         width: 100%;
@@ -57,7 +105,7 @@
         border: none;
     }
     table .sel{
-        background: rgba(255, 26, 214, 0.69);
+        background: rgba(255, 214, 23, 0.69);
     }
     table .colHead{
         color: #fff;
@@ -72,7 +120,7 @@
     }
     .selInfo{
         position: fixed;
-        left: 0;
+        left: 250px;
         bottom: 0;
         width: 100%;
         height: 50px;
@@ -88,26 +136,53 @@
 </style>
 <body>
     <div id="content">
-        <table>
-            <tr class="head">
-                <td colspan="4">{{ title }}</td>
-            </tr>
-            <tr class="colHead">
-                <td>名称</td>
-                <td>链接</td>
-                <td>日期</td>
-            </tr>
-            <tbody>
-            <tr v-for="(bt, index) in list" @click="onSel(bt)" v-if="bt.status" v-bind:class="{ sel:bt.isSel }">
-                <td>{{ bt.title }}</td>
-                <td>{{ bt.magnet }}</td>
-                <td>{{ time(bt.date) }}</td>
-            </tr>
-            <tr v-show="load">
-                <td colspan="5"> {{ loadTips }} </td>
-            </tr>
-            </tbody>
-        </table>
+        <div class="monitor">
+            <ul class="global">
+                <li> {{ monitor.global.startTime }} </li>
+                <li v-for="(val,key) in monitor.global" v-if="key != 'startTime'" >
+                    <span>{{ key }} : {{ val }}</span>
+                </li>
+            </ul>
+            <ul class="node" v-for="(node,index) in monitor.nodeList">
+                <li class="name"
+                    v-bind:class="{ sleep: node.targets.status == 2, active: node.targets.status == 1,close:node.targets.status == 0 }">{{ node.name }}
+                </li>
+                <li> saveCount: {{ node.targets.saveCount   }} </li>
+                <li> crawledPage: {{ node.targets.crawledPage   }} </li>
+                <p style="padding: 5px;"></p>
+                <li> currPage: {{ node.targets.currPage }} </li>
+                <li v-bind:title="node.targets.currPage_url"> currPageUrl: {{ node.targets.currPage_url }}</li>
+                <li> currSaveCount: {{ node.targets.currPage_saveCount  }} </li>
+                <li> Process: {{ node.targets.currPage_crawlIndex  }} / {{ node.targets.currPage_BTCount  }} </li>
+                <li> infoUrl & BT: {{ node.targets.currPage_infoUrlCount    }} / {{ node.targets.currPage_BTCount }} </li>
+                <li> Err & OK: {{ node.targets.currPage_crawlErrCount }} / {{ node.targets.currPage_crawlSuccessCount }} </li>
+                <li class="process">  </li>
+            </ul>
+        </div>
+        <div class="BTList">
+            <table>
+                <tr class="head">
+                    <td colspan="4">{{ title }}</td>
+                </tr>
+                <tr class="colHead">
+                    <td>名称</td>
+                    <td>大小</td>
+                    <td>链接</td>
+                    <td>日期</td>
+                </tr>
+                <tbody>
+                <tr v-for="(bt, index) in list" v-if="bt.status" v-bind:class="{ sel:bt.isSel }" :key="bt.id">
+                    <td @click="onSel(bt)">{{ bt.title }}</td>
+                    <td>{{ bt.size }}</td>
+                    <td><input readonly style="border: none; background: transparent;" type="text" v-model= "bt.magnet"></td>
+                    <td>{{ bt.date }}</td>
+                </tr>
+                <tr v-show="load">
+                    <td colspan="5"> {{ loadTips }} </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
         <div style="height:100px;"></div>
         <div class="selInfo">
             <p>
@@ -122,13 +197,14 @@
     var app = new Vue({
         el: '#content',
         data: {
+            monitor: {},
             serverUrl: "/",
             count: 0,
             start: 0,
-            size: 50,
+            size: 64,
             load: false,
             loadTips: "加载中...",
-            list:{}, //以id为索引
+            list: [], //以id为索引
             message: 'Hello Vue!'
         },
         mounted:function(){
@@ -147,10 +223,12 @@
             //初始化复制按钮
             new Clipboard('.copyBTN');
             //定时查询总量
-            that.updateCount();
-            setInterval(function(){
-                that.updateCount();
-            },1000 * 5);
+            this.updateCount();
+            this.updateMonitor();
+            setInterval(()=>{
+                this.updateCount();
+                this.updateMonitor();
+            },1000 * 1);
         },
         computed:{
             title:function(){
@@ -207,6 +285,22 @@
                     }
                 });
             },
+            /*
+            * 更新监视器
+            * */
+            updateMonitor:function(){
+                $.ajax({
+                    url: this.serverUrl + "monitor",
+                    jsonp: "jsonp",
+                    dataType: "jsonp",
+                    success: (function( res ) {
+                        this.monitor = res;
+                    }).bind(this),
+                    error:function( err ){
+                        console.err("updateMonitor:",err);
+                    }
+                });
+            },
             next:function(){
                 if( this.load ){
                     return true;
@@ -230,7 +324,7 @@
                         this.start += res.length;
                         for(var i = 0,n = res.length; i < n; i++){
                             res[i].isSel = false;
-                            this.$set( this.list,res[i].id, res[i]);
+                            this.list.push( res[i] );
                         }
                     }).bind(this),
                     error:function(){

@@ -6,13 +6,17 @@
 * 获取总量
 * */
 let gconf = require("./config");
-let Promise = require("promise");
-let sqlite3 = require("sqlite3");
-let fs = require("fs");
-let http = require("http");
-let port = gconf.web.port;
-let url = require('url');
+const Promise = require("promise");
+const sqlite3 = require("sqlite3");
+const log4js = require('log4js');
+const fs = require("fs");
+const http = require("http");
+const port = gconf.web.port;
+const url = require('url');
+const logger = log4js.getLogger("web");
+logger.level = 'all';
 let E = {};
+let monitorMaster = null;
 /*
 * 启动服务
 * */
@@ -41,7 +45,13 @@ E.run = function run(){
             response.end("404 error! File not found.");
         }
     }).listen(port);
-    console.log('web listen ',port);
+    logger.debug('web listen ',port);
+};
+/*
+* 设置监视器
+* */
+E.setMonitor = function( m ){
+    monitorMaster = m;
 };
 /*
 * servers
@@ -57,6 +67,11 @@ let servers = {
                 cb( data.toString() );
             }
         });
+    },
+    //输出监视器内容
+    monitor:( query, cb )=>{
+        let jsonp = query.jsonp || "callback";
+        cb( jsonp + "(" + JSON.stringify( monitorMaster.get() ) + ")" );
     },
     //统计数量
     count:function( query,cb ){
@@ -108,7 +123,7 @@ let servers = {
         let jsonp = query.jsonp || "callback";
         open()
             .then(function( db ){
-                db.all("select * from `all` where status = 1 ORDER BY id DESC limit "+start+"," + size,function( err,rows ){
+                db.all("select * from `all` where status = 1 ORDER BY date DESC limit "+start+"," + size,function( err,rows ){
                     if( err ){
                         cb( err.toString() );
                     }
@@ -139,6 +154,5 @@ function open(){
         });
     })
 }
-
 //////////////////
 module.exports = E;

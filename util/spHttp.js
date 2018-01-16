@@ -6,11 +6,12 @@
 let gconf = require("./../config.js");
 let Promise = require('promise');
 let request = require('request');
-let Agent = require('socks5-http-client/lib/Agent');
+let httpAgent = require('socks5-http-client/lib/Agent');
+let httpsAgent = require('socks5-https-client/lib/Agent');
 let extend = require('extend');
+let randomUseragent = require('random-useragent');
 let E = {};
 let socketProxy = gconf.socketProxy;
-
 /*
 * 普通的get方式请求
 * */
@@ -18,13 +19,14 @@ E.get = function get( url,spName ){
     let options = {
         url: url,
         timeout: 1000 * 60,
-        headers: " 'User-Agent': 'Mobile-1880'"
+        headers: " 'User-Agent': 'Mobile 111111'"
     };
     //加入socket代理
     if( spName ){
         let sp = socketProxy[ spName ];
+        let isHttps = url.substr(0,8).toLocaleLowerCase() === "https://";
         options = extend({},options,{
-            agentClass: Agent,
+            agentClass: isHttps ? httpsAgent : httpAgent,
             agentOptions: {
                 socksHost: sp.ip,
                 socksPort: sp.port
