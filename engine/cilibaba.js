@@ -1,7 +1,8 @@
 const extend = require('extend');
 const _ = require("underscore");
-const spHttp = require("../util/spHttp.js");
+const spHttp = require("../util/spHttp.js").factory();
 const monitor = require("../util/monitor.js");
+const createTaskId = require('../util/createTaskId');
 const log4js = require('log4js');
 const pretty = require('prettysize');
 const pinyin = require('pinyin');
@@ -37,17 +38,12 @@ module.exports = class extends list_loop_tpl{
     constructor( ec ){
         super( extend({},conf,ec) );
         //生成任务ID
-        let py = pinyin( this.conf.key ,{ style: pinyin.STYLE_FIRST_LETTER });
-        let keyFirstLetter = _.map(py, _.first).join("");
-        if( !keyFirstLetter ){
-            keyFirstLetter = parseInt(Math.random()*10000000,10)+1;
-        }
-        this.conf.id = this.task = this.conf.engine + "-" + keyFirstLetter;
+        this.conf.id = this.task = createTaskId( this.conf );
         //生成LPUrl，根据关键词
         this.conf.LPUrl = this.conf.LPUrl.replace("%key%",this.conf.key);
         //创建logger
-        this.logger = log4js.getLogger( this.task );
-        this.logger.level = 'error';
+        this.initLogger();
+        this.logger.level = "error";
         //创建监视器
         this.monitorNode = new monitor.node( this.task );
     }

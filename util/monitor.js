@@ -13,9 +13,10 @@ const setGlobalEvent = "monitor_global_set";
 * 监控指标
 * */
 let targetsTpl = {
-    //全局的
+    //累计
     saveCount: 0,//当前任务总共保存的数量
     crawledPage: 0, //当前任务已经采集过的页数
+    prepareError: 0, //准备页错误
     status: 1, //当前状态 0关闭 1运行 2休眠
     //当前页有关
     currPage: 0, //当前采集页数
@@ -23,7 +24,7 @@ let targetsTpl = {
     currPage_infoUrlCount: 0,//查询到的infoUrl数量
     currPage_BTCount: 0,//当前页存在的BT数量
     currPage_crawlIndex: 0,//在当前页抓取第几个BT
-    currPage_crawlErrCount: 0,//抓取失败数量
+    currPage_crawlErrCount: 0,//抓取BT失败数量
     currPage_crawlSuccessCount: 0,//抓取失败数量
     currPage_saveCount: 0,//当前页抓取并成功存储的数量
 };
@@ -31,6 +32,7 @@ let targetsTpl = {
 * 全局指标
 * */
 let globalTargets = exports.globalTargets = {
+    allTask: 0,
     startTime: null,
     workerSize: 0, //woker数量
     workerTaskSize: 0, //每个worker的任务数量

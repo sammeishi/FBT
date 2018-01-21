@@ -11,8 +11,10 @@ const extend = require('extend');
 const nodeUrl = require('url');
 const _ = require("underscore");
 const storage = require("./../../util/storage.js");
-const spHttp = require("./../../util/spHttp.js");
+const spHttp =  require("./../../util/spHttp").factory();
+const filterByKey = require("../../util/filterByKey");
 const monitor = require("./../../util/monitor.js");
+const log4js = require('log4js');
 const Promise = require('promise');
 const cheerio = require('cheerio');
 /*
@@ -22,11 +24,12 @@ let _conf = {
     LPUrl: null, //列表页URL模板 %PAGE% = 页数
     encodeURI: false, //开启URL编码
     socketProxy: false, //socket代理
+    pageInterval: 2000, //每个页完成后的间隔，单位毫秒
     urlInterval: 50, //每个URL完成后的间隔，单位毫秒
     urlTimeout: 60 * 1000, //URL超时
     sleepTime: 1000 * 60 * 60 * 1, //休眠时间，默认睡眠1小时
     readRetry: 3, //读取一个种子重试次数
-    page: 20, //最大抓取页数
+    page: 30, //最大抓取页数
     queryRules:{
         infoUrl: null,
         testInfoUrl: null,
@@ -37,35 +40,10 @@ let _conf = {
     },
 };
 /*
-* BT基础结构 与数据库一致且超集
-* */
-let BT_STRUCT = storage.BT_STRUCT,
-    createBT = function( i ){
-        return extend( {},BT_STRUCT,i || {} );
-    };
-/*
 * 获取document的DOM，用于筛选器的查询
 * */
 function GET_DOC_DOM( html ){
     return cheerio.load( html );
-}
-/*
-* 转化为绝对URL
-* */
-function toAbsoluteUrl( refer,url ){
-    return (new nodeUrl.URL( url, refer )).href;
-}
-/*
-* 格式化字符串去除特殊符号
-* */
-function formatStr( str ){
-    str = str.replace(/<\/?[^>]*>/g,''); //去除HTML tag
-    str = str.replace(/[ | ]*\n/g,'\n'); //去除行尾空白
-    str = str.replace(/\n[\s| | ]*\r/g,'\n'); //去除多余空行
-    str = str.replace(/ /ig,'');//去掉
-    str = str.replace(/^[\s　]+|[\s　]+$/g, "");//去掉全角半角空格
-    str = str.replace(/[\r\n]/g,"");//去掉回车换行
-    return str;
 }
 /*
 * 模板基类，里面的函数均可覆盖以二次定制
@@ -78,15 +56,56 @@ class LIST_LOOP_TPL {
         this.spName = this.conf.socketProxy; //socket代理名
         this.queryRules = this.conf.queryRules; //查询规则
         this.page = this.conf.page; //抓取总页数
+        this.key = null; //当前关键词
         this.currPage = 0; //当前页数
+        this.currPageHTML = null; //当前页的源码
         this.logger = null;
         this.monitorNode = null;
         this.currCrawlUrl = null; //当前抓取的url
+        this.spHttp = spHttp;
+    }
+    /*
+    * 复式任务
+    * task调度会把一个任务配置传递过来询问是否是复式
+    * 返回一个数组。数组内是多个任务
+    * 引擎是否支持复式创建，如果支持，一份任务配置会被拆分成多个任务
+    * */
+    static mulitCreate( taskConf ){
+        let newTask = [] ;
+        if( taskConf.key && _.isArray(taskConf.key) ){
+            _.each(taskConf.key,function( key ){
+                newTask.push(extend( {},taskConf,{ key: key } ));
+            });
+        }
+        return newTask.length === 0 ? [ taskConf ] : newTask;
+    }
+    /*util*/
+    createBT( i ){
+        let BT_STRUCT = storage.BT_STRUCT;
+        return extend( {},BT_STRUCT,i || {} );
+    }
+    toAbsoluteUrl( refer,url ){
+        return (new nodeUrl.URL( url, refer )).href;
+    }
+    formatStr( str ){
+        str = str.replace(/<\/?[^>]*>/g,''); //去除HTML tag
+        str = str.replace(/[ | ]*\n/g,'\n'); //去除行尾空白
+        str = str.replace(/\n[\s| | ]*\r/g,'\n'); //去除多余空行
+        str = str.replace(/ /ig,'');//去掉
+        str = str.replace(/^[\s　]+|[\s　]+$/g, "");//去掉全角半角空格
+        str = str.replace(/[\r\n]/g,"");//去掉回车换行
+        str = str.replace(/[\ |\~|\`|\!|\@|\#|\$|\%|\^|\&|\*|||\-|\_|\+|\=|\||\\|||\{|\}|\;|\:|\"|\'|\,|\<|\.|\>|\/|\?]/g,"");
+        return str;
+    }
+    initLogger(){
+        this.logger = log4js.getLogger( this.task );
+        this.logger.level = 'error';
     }
     /*
     * 开始下一页
     * */
     next(){
+        let callAgain = ()=>setTimeout(()=>this.next(),this.conf.pageInterval);
         if( this.currPage >= this.page  ){
             //监视器，设置状态为休眠
             this.monitorNode.set("status",2);
@@ -112,13 +131,13 @@ class LIST_LOOP_TPL {
             this.logger.debug("TAKE PAGE",this.currPage,"DONE");
             this.monitorNode.add('crawledPage',1);
             this.monitorNode.addGlobal('crawledPage',1);
-            this.next();
+            callAgain();
         }).catch(( err )=>{
             //发生错误，记录错误并继续
             this.monitorNode.add('crawledPage',1);
             this.monitorNode.addGlobal('crawledPage',1);
-            this.logger.error( `crawl ${ this.currCrawlUrl } error:`, err );
-            this.next();
+            this.logger.error( `Crawl error:`, err );
+            callAgain();
         });
     }
     /*
@@ -127,6 +146,7 @@ class LIST_LOOP_TPL {
     wakeUp(){
         this.currPage = 0;
         this.currCrawlUrl = null;
+        this.currPageHTML = null;
         this.monitorNode.set("currPage_infoUrlCount",0);
         this.monitorNode.set("currPage_BTCount",0);
         this.monitorNode.set("currPage_crawlIndex",0);
@@ -187,10 +207,13 @@ class LIST_LOOP_TPL {
         let existUrl = {};
         return new Promise((resolve, reject) => {
             $( this.queryRules.infoUrl ).each(function() {
-                let infoUrl = toAbsoluteUrl( that.currCrawlUrl, $(this).attr('href') );
+                let infoUrl = that.toAbsoluteUrl( that.currCrawlUrl, $(this).attr('href') );
                 if( that.testInfoUrl( infoUrl ) && typeof(existUrl[ infoUrl ]) === "undefined" ){
                     urls.push( infoUrl );
                     existUrl[ infoUrl ] = true;
+                }
+                else{
+                    that.logger.debug("NOT OK INFOURL:",infoUrl);
                 }
             });
             that.monitorNode.set('currPage_infoUrlCount',urls.length);
@@ -212,9 +235,11 @@ class LIST_LOOP_TPL {
     * */
     prepare( url ){
         return new Promise(( resolve, reject ) => {
-            spHttp.get(url,this.spName).then(function( body ){
+            spHttp.get(url,this.spName).then(( body )=>{
+                this.currPageHTML = body;
                 return resolve( GET_DOC_DOM(body) );
-            }).catch(function( err ){
+            }).catch(( err ) =>{
+                this.monitorNode.add('prepareError',1);
                 return reject( err );
             });
         });
@@ -247,7 +272,7 @@ class LIST_LOOP_TPL {
                 .then(( infoUrls )=>{
                     let BTs = [];
                     _.each( infoUrls,( url ) => {
-                        BTs.push( createBT({
+                        BTs.push( this.createBT({
                             task: this.task,
                             infoUrl: url
                         }) );
@@ -269,13 +294,16 @@ class LIST_LOOP_TPL {
     read( BTs ){
         let index = 0;
         let urlInterval = this.conf.urlInterval;
+        let max = 2;
         //循环获取BT
         let NEXT_BT = ( cb )=>{
             let callAgain = ()=> { index++; setTimeout( NEXT_BT.bind(this,cb),urlInterval );};
+            //达到末尾
             if( index >= BTs.length ){
                 return cb();
             }
             this.readOne( BTs[ index ] ).then(()=>{
+                //监视器更新
                 this.monitorNode.add('currPage_crawlIndex',1);
                 this.monitorNode.add('currPage_crawlSuccessCount',1);
                 this.monitorNode.addGlobal('crawlSuccessCount',1);
@@ -283,6 +311,7 @@ class LIST_LOOP_TPL {
                 return callAgain();
             }).catch(( err )=>{
                 //读取失败，保存错误，继续下一个
+                this.logger.error( err );
                 this.monitorNode.add('currPage_crawlIndex',1);
                 this.monitorNode.add('currPage_crawlErrCount',1);
                 this.monitorNode.addGlobal('crawlErrCount',1);
@@ -303,12 +332,13 @@ class LIST_LOOP_TPL {
         let url = BT.infoUrl;
         let retry = this.readRetry || 1;
         let queryRules = this.queryRules;
+        let that = this;
         return new Promise((resolve, reject)=>{
             let loop = ( BT,cb )=>{
                 spHttp.get( url,this.spName )
                     .then( function( body ){
                         let $ = GET_DOC_DOM( body );
-                        BT.title = formatStr($( queryRules.title ).first(0).text());
+                        BT.title = that.formatStr($( queryRules.title ).first(0).text());
                         BT.date = $( queryRules.date ).first(0).text();
                         BT.magnet = $( queryRules.magnet ).first(0).attr("href");
                         BT.size = $( queryRules.size ).first(0).text();
@@ -333,11 +363,19 @@ class LIST_LOOP_TPL {
     * 去除无效的，磁力地址为空的BT
     * */
     save( BTs ){
-        let BTS = this.beforeSave( BTs );
         //去除不含有磁力链接地址的BT
         BTs = _.filter(BTs,function( BT ){
-            return _.isString(BT.magnet) && BT.magnet.indexOf("magnet") !== -1;
+            if( !_.isObject(BT) )return false;
+            else if( !_.isString(BT.title) )return false;
+            else if( !BT.title )return false;
+            else if( !_.isString(BT.magnet) )return false;
+            else return BT.magnet.indexOf("magnet") !== -1;
         });
+        //过滤不需要的BT
+        BTs = filterByKey( BTs );
+        //存储前通知
+        BTs = this.beforeSave( BTs );
+        //开始存储,存储会自动过滤已经存在的磁力
         return new Promise(( resolve, reject )=>{
             storage.addBT( BTs )
                 //完成
@@ -353,19 +391,18 @@ class LIST_LOOP_TPL {
                 })
                 //发生错误
                 .catch(( err )=>{
-                    console.log( "save error ! ",err );
+                    console.log( "save error : ",err );
                     reject( err );
                 });
         });
     }
     /*
-    * 存储前进行一次过滤
+    * 存储前通知。默认进行一次根据关键词去除BT
     * */
     beforeSave( BTs ){
-        return BTs;
+        return  BTs;
     }
 };
-
 /*
 * exports
 * */

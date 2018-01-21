@@ -2,8 +2,10 @@ const extend = require('extend');
 const _ = require("underscore");
 const log4js = require('log4js');
 const monitor = require("../util/monitor.js");
+const filterByKey = require("../util/filterByKey.js");
 const list_loop_tpl = require('./tpl/list.loop.tpl');
 const pinyin = require('pinyin');
+const userAgent = " 'User-Agent': 'Mobile 1100'";
 /*
 * 配置
 * */
@@ -28,6 +30,8 @@ let conf = {
 module.exports = class extends list_loop_tpl{
     constructor( ec ){
         super( extend({},conf,ec) );
+        //更改agent
+        this.spHttp.options.headers = userAgent;
         //生成任务ID
         let py = pinyin( this.conf.key ,{ style: pinyin.STYLE_FIRST_LETTER });
         let keyFirstLetter = _.map(py, _.first).join("");
@@ -42,21 +46,22 @@ module.exports = class extends list_loop_tpl{
         }
         this.conf.LPUrl = this.conf.LPUrl.replace("%key%",key);
         //创建logger
-        this.logger = log4js.getLogger( this.task );
-        this.logger.level = 'error';
+        this.initLogger();
+        this.logger.level = "error";
         //创建监视器
         this.monitorNode = new monitor.node( this.task );
     }
     /*
     * 存储前过滤种子
     * */
-    beforeSave( BTS ){
-        return _.map( BTS,function( BT ){
+    beforeSave( BTs ){
+        _.each( BTs,function( BT ){
             //去除date的UTC
             if( BT.date ){
                 BT.date = BT.date.toString().replace(/ UTC/gi,"");
             }
         } );
+        return BTs;
     }
     /*
     * 引擎启动

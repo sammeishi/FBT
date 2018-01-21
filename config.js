@@ -18,10 +18,10 @@ module.exports = {
     },
     //任务配置
     "tasks":[
-        { engine: "sukebei.nyaa.si-hs", key: "丝袜"},
-        { engine: "sukebei.nyaa.si-hs", key: "黑丝"},
-        { engine: "sukebei.nyaa.si-hs", key: "美腿"},
-        { engine: "sukebei.nyaa.si-hs", key: "情趣"},
-        { engine: "sukebei.nyaa.si-hs", key: "白丝"}
+        { engine: "juzisousuo", key: ['丝袜','黑丝','自慰','白丝','情趣','美腿']},
+        { engine: "btcerise", key: ['丝袜','黑丝','自慰','白丝','情趣','美腿']},
+        { engine: "cili-home", key: ['丝袜','黑丝','自慰','白丝','情趣','美腿']},
+        { engine: "idope", key: ['丝袜','黑丝','自慰','白丝','情趣','美腿']},
+        { engine: "sukebei.nyaa.si-hs", key: ['丝袜','黑丝','自慰','白丝','情趣','美腿']},
     ]
 };

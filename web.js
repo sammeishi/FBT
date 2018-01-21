@@ -119,11 +119,12 @@ let servers = {
     //查询所有数据
     list:function( query,cb ){
         let start = query.start || 0;
+        let key = query.key || "";
         let size = query.size || 50;
         let jsonp = query.jsonp || "callback";
         open()
             .then(function( db ){
-                db.all("select * from `all` where status = 1 ORDER BY date DESC limit "+start+"," + size,function( err,rows ){
+                db.all("select * from `all` where status = 1 "+ ( key ? ` AND title like '%${key}%'` : "" ) +" ORDER BY date DESC limit "+start+"," + size,function( err,rows ){
                     if( err ){
                         cb( err.toString() );
                     }

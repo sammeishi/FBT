@@ -4,6 +4,7 @@
 * 2：提供结果存储-查询接口
 * */
 const gconf = require("../config.js");
+const _ = require('underscore');
 const Promise = require('promise');
 const dateFormat = require('dateformat');
 const sqlite3 = require("sqlite3");
@@ -69,7 +70,7 @@ E.init = function init( cb ){
             "`id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE," +
             "`task` TEXT NOT NULL," +
             "`status` INTEGER DEFAULT 1," +
-            "`magnet` TEXT NOT NULL," +
+            "`magnet` TEXT UNIQUE," +
             "`title` TEXT," +
             "`size` TEXT," +
             "`date` DATE," +
@@ -130,37 +131,45 @@ E.addBT = function addBT( BTs ){
     let insertTpl = "INSERT INTO `all` (task,magnet,title,size,date,infoUrl,addDate) VALUES ";
     let valueTpl = "('%task%','%magnet%','%title%','%size%','%date%','%infoUrl%','%addDate%')";
     return new Promise(( resolve,reject )=>{
-        if( BTs.length === 0 ){
-            return resolve( BTs );
-        }
-        open()
-            .then(function( db ){
-                let valueSql = [];
-                for(let i = 0,n = BTs.length; i < n; i++){
-                    let BT = BTs[ i ];
-                    let value = valueTpl;
-                    value = value.replace("%task%",BT.task);
-                    value = value.replace("%magnet%",BT.magnet);
-                    value = value.replace("%title%",BT.title);
-                    value = value.replace("%size%",BT.size);
-                    value = value.replace("%date%",BT.date);
-                    value = value.replace("%infoUrl%",BT.infoUrl);
-                    value = value.replace("%addDate%",dateFormat(new Date(),"yyyy-mm-dd HH:MM:ss"));
-                    valueSql.push( value );
-                }
-                db.run( insertTpl + valueSql.join(","),function( err ){
-                    db.close();
-                    err ? reject(err) :  resolve( BTs );
+        removeAlreadyExist( BTs ,function( s,res ){
+            if( !s ){
+                console.error( "removeAlreadyExist err:" ,res);
+                return reject( res );
+            }
+            else{
+                BTs = res;
+            }
+            if( BTs.length === 0 ){
+                return resolve( BTs );
+            }
+            open()
+                .then(function( db ){
+                    let valueSql = [];
+                    for(let i = 0,n = BTs.length; i < n; i++){
+                        let BT = BTs[ i ];
+                        let value = valueTpl;
+                        value = value.replace("%task%",(BT.task));
+                        value = value.replace("%magnet%",(BT.magnet));
+                        value = value.replace("%title%",(BT.title));
+                        value = value.replace("%size%",(BT.size));
+                        value = value.replace("%date%",(BT.date));
+                        value = value.replace("%infoUrl%",(BT.infoUrl));
+                        value = value.replace("%addDate%",dateFormat(new Date(),"yyyy-mm-dd HH:MM:ss"));
+                        valueSql.push( value );
+                    }
+                    db.run( insertTpl + valueSql.join(","),function( err ){
+                        db.close();
+                        err ? reject(err) :  resolve( BTs );
+                    });
+                })
+                .catch(function( err ){
+                    reject( err );
                 });
-            })
-            .catch(function( err ){
-                reject( err );
-            });
+        });
     });
 };
 /*
-* 通过来源字段过滤BT
-* infoUrl = 数组
+* 通过infoUrl去除存在的，防止重复读取相同的infoUrl
 * */
 E.filterByInfoUrl = function filterByInfoUrl( sources ){
     //复制一份, 加入引号。source是字符
@@ -205,5 +214,47 @@ E.filterByInfoUrl = function filterByInfoUrl( sources ){
             })
     });
 };
+/*
+* 去除已经存在的磁力
+* */
+function removeAlreadyExist( BTs,cb ){
+    let magnetList = _.map( BTs,( BT )=>{ return  BT.magnet; } );
+    let queryMagnetList = _.map( BTs,( BT )=>{ return "'" + BT.magnet + "'"; } );
+    //复制一份, 加入引号。source是字符
+    let sql = "select magnet from `all` where magnet in( "+ queryMagnetList.join(",") +" ) ";
+    let newBTs = [];
+    if( magnetList.length === 0 ){
+        return cb(true,[]);
+    }
+    open()
+    //查询数据库存在的source，比较差集
+        .then(function( db ){
+            db.all(sql,[],function( err,rows ){
+                //查询错误，直接返回
+                if( err ){
+                    console.error('removeAlreadyExist open err',err);
+                    return cb( false,err );
+                }
+                else{
+                    //提取查询的结果，组成数组
+                    let existList = {};
+                    for(let i = 0,n = rows.length; i < n; i++){
+                        existList[ rows[i]['magnet'] ] = true;
+                    }
+                    //提取出差集BT
+                    newBTs = _.filter(BTs,( BT )=>{
+                        return existList[ BT.magnet ] !== true;
+                    });
+                    db.close();
+                    cb( true, newBTs );
+                }
+            });
+        })
+        //打开数据库失败
+        .catch(function( err ){
+            db.close();
+            cb( false,err );
+        })
+}
 ///////////////////
 module.exports = E;
