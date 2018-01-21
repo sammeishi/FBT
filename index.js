@@ -69,7 +69,7 @@ function masterStart(){
             wkTasks.push( allTask[ curr++ ] )
         }
         //输出debug
-        logger.debug(`Send Task To Worker${worker.id}, SIZE:${wkTasks.length}, INFO:${JSON.stringify(wkTasks)}`);
+        logger.debug(`Send Task To Worker${worker.id}, SIZE:${wkTasks.length}`);
         //向指定子进程发送任务
         worker.send( {
             eventName: "onTaskRun",
