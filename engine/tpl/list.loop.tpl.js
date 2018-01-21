@@ -24,10 +24,10 @@ let _conf = {
     LPUrl: null, //列表页URL模板 %PAGE% = 页数
     encodeURI: false, //开启URL编码
     socketProxy: false, //socket代理
-    pageInterval: 2000, //每个页完成后的间隔，单位毫秒
-    urlInterval: 50, //每个URL完成后的间隔，单位毫秒
+    pageInterval: 1000 * 60, //每个页完成后的间隔，单位毫秒 默认1分钟
+    urlInterval: 1000 * 10, //每个URL完成后的间隔，单位毫秒 默认10秒
     urlTimeout: 60 * 1000, //URL超时
-    sleepTime: 1000 * 60 * 60 * 1, //休眠时间，默认睡眠1小时
+    sleepTime: 1000 * 60 * 60 * 3, //休眠时间，默认睡眠3小时
     readRetry: 3, //读取一个种子重试次数
     page: 30, //最大抓取页数
     queryRules:{
@@ -101,6 +101,13 @@ class LIST_LOOP_TPL {
         this.logger = log4js.getLogger( this.task );
         this.logger.level = 'error';
     }
+    getSleepTime(){
+        let r = Math.random() * 2;
+        r > 2 ? r = 2 : null;
+        r < 0.5 ? r = 0.5 : null;
+        //错开30分钟，防止所有任务在同一时刻开始
+        return Math.floor(this.conf.sleepTime * r);
+    }
     /*
     * 开始下一页
     * */
@@ -110,8 +117,9 @@ class LIST_LOOP_TPL {
             //监视器，设置状态为休眠
             this.monitorNode.set("status",2);
             //完成一轮抓取，休眠后继续下一轮
-            this.logger.debug('Round Done,Sleep',this.conf.sleepTime / 1000 + "s" );
-            return setTimeout(this.wakeUp.bind(this),this.conf.sleepTime);
+            let sleepTime = this.getSleepTime() / 1000;
+            this.logger.debug('Round Done,Sleep',sleepTime + "s" );
+            return setTimeout(this.wakeUp.bind(this), sleepTime );
         }
         else{
             this.monitorNode.set("status",1);
@@ -136,7 +144,7 @@ class LIST_LOOP_TPL {
             //发生错误，记录错误并继续
             this.monitorNode.add('crawledPage',1);
             this.monitorNode.addGlobal('crawledPage',1);
-            this.logger.error( `Crawl error:`, err );
+            this.logger.error( `Crawl error:`, err, this.currCrawlUrl  );
             callAgain();
         });
     }
